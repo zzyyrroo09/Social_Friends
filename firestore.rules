@@ -109,17 +109,17 @@ service cloud.firestore {
       let isLikeUpdate = affectedKeys.hasOnly(['likeCount']);
       
       // Atomic increment/decrement logic for likes
-      if (isLikeUpdate) {
-        let diff = request.resource.data.likeCount - resource.data.likeCount;
-        let likeDocId = request.auth.uid + '_' + postId;
-        return (diff == 1 && !exists(/databases/$(database)/documents/likes/$(likeDocId)) && getAfter(/databases/$(database)/documents/likes/$(likeDocId)) != null) ||
-               (diff == -1 && exists(/databases/$(database)/documents/likes/$(likeDocId)) && getAfter(/databases/$(database)/documents/likes/$(likeDocId)) == null);
-      }
+      let diff = ('likeCount' in request.resource.data && 'likeCount' in resource.data) ? request.resource.data.likeCount - resource.data.likeCount : 0;
+      let likeDocId = request.auth.uid + '_' + postId;
       
-      // Normal update logic
-      return (isAuthor || isAdmin) &&
+      let isValidLikeChange = (diff == 1 && !exists(/databases/$(database)/documents/likes/$(likeDocId)) && existsAfter(/databases/$(database)/documents/likes/$(likeDocId))) ||
+                              (diff == -1 && exists(/databases/$(database)/documents/likes/$(likeDocId)) && !existsAfter(/databases/$(database)/documents/likes/$(likeDocId)));
+      
+      let isValidNormalUpdate = (isAuthor || isAdmin) &&
              areImmutableFieldsUnchanged(['authorId', 'createdAt', 'groupId', 'likeCount']) &&
              request.resource.data.content is string && request.resource.data.content.size() > 0 && request.resource.data.content.size() <= 1000;
+             
+      return (isLikeUpdate && isValidLikeChange) || (!isLikeUpdate && isValidNormalUpdate);
     }
 
     function isValidLike(data, userId, postId) {
