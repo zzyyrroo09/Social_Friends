@@ -1,0 +1,189 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - name: string (optional, max 100 chars)
+    //   - email: string (optional, max 100 chars)
+    //   - inviteState: string (optional, immutable by user)
+    //
+    // Collection: groups
+    // Document ID: {groupId}
+    // Fields:
+    //   - isPrivate: boolean
+    //   - members: list of strings (optional)
+    //   - adminId: string
+    //
+    // Collection: groupMembers
+    // Document ID: {uid}_{groupId}
+    // Fields:
+    //   - userId: string
+    //   - groupId: string
+    //
+    // Collection: posts
+    // Document ID: {postId}
+    // Fields:
+    //   - authorId: string (required, immutable)
+    //   - groupId: string (optional, immutable)
+    //   - content: string (required, max 1000 chars)
+    //   - likeCount: number (required, increments/decrements by 1)
+    //   - createdAt: timestamp (required, immutable)
+    //
+    // Collection: likes
+    // Document ID: {userId}_{postId}
+    // Fields:
+    //   - userId: string (required, immutable)
+    //   - postId: string (required, immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validation Functions
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['uid', 'name', 'email', 'inviteState']) &&
+             (!('uid' in data) || data.uid == request.auth.uid) &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 100)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 100)) &&
+             (!('inviteState' in data) || data.inviteState is string);
+    }
+
+    function isGroupMember(groupId) {
+      let group = get(/databases/$(database)/documents/groups/$(groupId));
+      let isPublic = group != null && group.data.isPrivate == false;
+      let inArray = group != null && 'members' in group.data && request.auth.uid in group.data.members;
+      let inSubcol = exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      let inRootCol = exists(/databases/$(database)/documents/groupMembers/$(request.auth.uid + '_' + groupId));
+      return isPublic || inArray || inSubcol || inRootCol;
+    }
+
+    function isGroupAdmin(groupId) {
+      let group = get(/databases/$(database)/documents/groups/$(groupId));
+      return group != null && group.data.adminId == request.auth.uid;
+    }
+
+    function isValidPost(data) {
+      return hasRequiredFields(['authorId', 'content', 'likeCount', 'createdAt']) &&
+             data.authorId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 1000 &&
+             data.likeCount is number && data.likeCount == 0 &&
+             data.createdAt is timestamp &&
+             (!('groupId' in data) || data.groupId == null || data.groupId == '' || isGroupMember(data.groupId));
+    }
+
+    function isValidPostUpdate(postId) {
+      let isAuthor = resource.data.authorId == request.auth.uid;
+      let hasGroup = 'groupId' in resource.data && resource.data.groupId != null && resource.data.groupId != '';
+      let isAdmin = hasGroup && isGroupAdmin(resource.data.groupId);
+      
+      let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let isLikeUpdate = affectedKeys.hasOnly(['likeCount']);
+      
+      // Atomic increment/decrement logic for likes
+      if (isLikeUpdate) {
+        let diff = request.resource.data.likeCount - resource.data.likeCount;
+        let likeDocId = request.auth.uid + '_' + postId;
+        return (diff == 1 && !exists(/databases/$(database)/documents/likes/$(likeDocId)) && getAfter(/databases/$(database)/documents/likes/$(likeDocId)) != null) ||
+               (diff == -1 && exists(/databases/$(database)/documents/likes/$(likeDocId)) && getAfter(/databases/$(database)/documents/likes/$(likeDocId)) == null);
+      }
+      
+      // Normal update logic
+      return (isAuthor || isAdmin) &&
+             areImmutableFieldsUnchanged(['authorId', 'createdAt', 'groupId', 'likeCount']) &&
+             request.resource.data.content is string && request.resource.data.content.size() > 0 && request.resource.data.content.size() <= 1000;
+    }
+
+    function isValidLike(data, userId, postId) {
+      return hasRequiredFields(['userId', 'postId']) &&
+             data.userId == userId &&
+             data.postId == postId &&
+             userId == request.auth.uid;
+    }
+
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Root-level default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Only authenticated owner can write/update.
+      // inviteState is protected from being changed by the user on update.
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                       isValidUser(request.resource.data) && 
+                       areImmutableFieldsUnchanged(['uid', 'inviteState']);
+    }
+
+    match /groups/{groupId} {
+      // Read allowed if public, or if user is in members array, or members subcollection, or groupMembers collection
+      allow read: if isAuthenticated() && isGroupMember(groupId);
+      
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+      }
+    }
+
+    match /groupMembers/{memberDocId} {
+      allow read: if isAuthenticated();
+    }
+
+    match /posts/{postId} {
+      allow read: if isAuthenticated() && 
+                     (!('groupId' in resource.data) || 
+                       resource.data.groupId == null || 
+                       resource.data.groupId == '' || 
+                       isGroupMember(resource.data.groupId));
+      
+      allow create: if isAuthenticated() && isValidPost(request.resource.data);
+      allow update: if isAuthenticated() && isValidPostUpdate(postId);
+      allow delete: if isAuthenticated() && 
+                       (resource.data.authorId == request.auth.uid || 
+                       (('groupId' in resource.data) && isGroupAdmin(resource.data.groupId)));
+    }
+
+    match /likes/{likeId} {
+      allow read: if isAuthenticated();
+      // likeId must match {userId}_{postId} convention. We extract userId and postId from the id.
+      allow create: if isAuthenticated() && 
+                       likeId.split('_')[0] == request.auth.uid &&
+                       isValidLike(request.resource.data, likeId.split('_')[0], likeId.split('_')[1]);
+      // Deleting a like is allowed if the user is the owner
+      allow delete: if isAuthenticated() && likeId.split('_')[0] == request.auth.uid;
+    }
+  }
+}
