@@ -7,3 +7,4 @@ export const Badge = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLD
   )
 );
 Badge.displayName = "Badge";
+

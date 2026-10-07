@@ -30,3 +30,4 @@ export async function DELETE() {
   response.cookies.delete("session");
   return response;
 }
+

@@ -9,3 +9,4 @@ export const Progress = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HT
   )
 );
 Progress.displayName = "Progress";
+

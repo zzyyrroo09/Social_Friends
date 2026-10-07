@@ -9,3 +9,4 @@ export const ScrollArea = React.forwardRef<HTMLDivElement, React.HTMLAttributes<
   )
 );
 ScrollArea.displayName = "ScrollArea";
+
