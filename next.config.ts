@@ -15,6 +15,7 @@ const nextConfig = {
       bodySizeLimit: "10mb", // Allow larger form submissions for media metadata
     },
   },
+  serverExternalPackages: ["firebase-admin", "firebase-admin/app", "firebase-admin/auth", "firebase-admin/firestore"],
 };
 
 export default nextConfig;

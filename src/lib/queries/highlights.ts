@@ -13,7 +13,7 @@ export async function getTopHighlightForUser(
   since.setDate(since.getDate() - windowDays);
 
   const memberships = await adminDb.collection("groupMembers").where("userId", "==", userId).get();
-  const groupIds = memberships.docs.map(doc => doc.data().groupId);
+  const groupIds = memberships.docs.map((doc: any) => doc.data().groupId);
 
   // Firestore doesn't support ordering by multiple fields easily if we need to filter by a range (createdAt)
   // Workaround for MVP: fetch posts created after `since`, sort manually in memory.
@@ -22,10 +22,10 @@ export async function getTopHighlightForUser(
     .where("createdAt", ">=", since)
     .get();
 
-  let topPost: { id: string; data: PostDocument } | null = null;
+  let topPost: any = null;
   let maxLikes = 0;
 
-  snapshot.forEach(doc => {
+  snapshot.forEach((doc: any) => {
     const data = doc.data() as PostDocument;
     if (data.likeCount > 0 && (data.groupId === null || groupIds.includes(data.groupId))) {
       if (data.likeCount > maxLikes) {

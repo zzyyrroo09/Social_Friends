@@ -23,7 +23,7 @@ export async function getScopedFeed(
   
   // Find groups user is a member of
   const memberships = await adminDb.collection("groupMembers").where("userId", "==", userId).get();
-  const groupIds = memberships.docs.map(doc => doc.data().groupId);
+  const groupIds = memberships.docs.map((doc: any) => doc.data().groupId);
   
   // Firestore doesn't easily support OR across completely different fields (groupId == null OR groupId IN [...])
   // Workaround: We fetch public posts (groupId == null) and group posts, then merge and sort.

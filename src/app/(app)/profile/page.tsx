@@ -27,7 +27,7 @@ export default async function ProfilePage() {
   const initials = currentUser.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const feedPosts = await Promise.all(
-    postsSnapshot.docs.map(async (doc) => {
+    postsSnapshot.docs.map(async (doc: any) => {
       const data = doc.data();
       const likeDoc = await adminDb.collection("likes").doc(`${currentUser.id}_${doc.id}`).get();
       return {
@@ -75,7 +75,7 @@ export default async function ProfilePage() {
         {feedPosts.length === 0 ? (
           <div className="text-center py-10"><p className="text-zinc-500 text-sm">No public posts yet.</p></div>
         ) : (
-          feedPosts.map((post) => <PostCard key={post.id} post={post as any} currentUserId={currentUser.id} />)
+          feedPosts.map((post: any) => <PostCard key={post.id} post={post as any} currentUserId={currentUser.id} />)
         )}
       </div>
     </div>

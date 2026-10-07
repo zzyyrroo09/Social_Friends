@@ -20,7 +20,7 @@ export default async function GroupsPage() {
     .get();
 
   const memberships = await Promise.all(
-    membershipsSnapshot.docs.map(async (doc) => {
+    membershipsSnapshot.docs.map(async (doc: any) => {
       const data = doc.data();
       const groupDoc = await adminDb.collection("groups").doc(data.groupId).get();
       return {
@@ -44,7 +44,7 @@ export default async function GroupsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {memberships.map(({ group, role }) => (
+          {memberships.map(({ group, role }: any) => (
             <Link
               key={group.id}
               href={`/groups/${group.slug}`}

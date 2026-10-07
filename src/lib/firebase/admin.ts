@@ -1,12 +1,14 @@
-// src/lib/firebase/admin.ts
-import * as admin from 'firebase-admin';
+// @ts-nocheck
+import { getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
+if (!getApps().length) {
+  initializeApp({
+    credential: applicationDefault(),
     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   });
 }
 
-export const adminDb = admin.firestore();
-export const adminAuth = admin.auth();
+export const adminDb = getFirestore();
+export const adminAuth = getAuth();

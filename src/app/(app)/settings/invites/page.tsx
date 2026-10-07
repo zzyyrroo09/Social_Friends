@@ -17,7 +17,7 @@ export default async function InvitesPage() {
     .get();
 
   const sentInvites = await Promise.all(
-    invitesSnapshot.docs.map(async (doc) => {
+    invitesSnapshot.docs.map(async (doc: any) => {
       const data = doc.data();
       let recipient = null;
       if (data.recipientId) {
