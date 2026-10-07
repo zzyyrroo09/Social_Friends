@@ -1,5 +1,5 @@
 // src/lib/firebase/posts.ts
-import { db, storage, auth } from "./config";
+import { db, auth } from "./config";
 import {
   collection,
   doc,
@@ -11,31 +11,53 @@ import {
   deleteDoc,
   getDoc
 } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { getCloudinarySignature } from "@/actions/cloudinary";
 import { PostDocument, MediaItem, LikeDocument } from "./schema";
 
 export async function uploadMedia(file: File, onProgress?: (progress: number) => void): Promise<MediaItem> {
   const user = auth.currentUser;
   if (!user) throw new Error("Must be logged in to upload media");
 
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storagePath = `uploads/${user.uid}/${Date.now()}-${sanitizedName}`;
-  const storageRef = ref(storage, storagePath);
-  const uploadTask = uploadBytesResumable(storageRef, file);
+  const { timestamp, signature, folder, apiKey, cloudName } = await getCloudinarySignature();
+
+  if (!cloudName || !apiKey) {
+    throw new Error("Cloudinary configuration missing");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("api_key", apiKey);
+  formData.append("timestamp", timestamp.toString());
+  formData.append("signature", signature);
+  formData.append("folder", folder);
 
   return new Promise((resolve, reject) => {
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => { if (onProgress) onProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100); },
-      (error) => reject(error),
-      async () => resolve({
-        url: await getDownloadURL(uploadTask.snapshot.ref),
-        storagePath,
-        type: file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
-        mimeType: file.type,
-        sizeBytes: file.size,
-      })
-    );
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress((e.loaded / e.total) * 100);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const response = JSON.parse(xhr.responseText);
+        resolve({
+          url: response.secure_url,
+          storagePath: response.public_id, // We store public_id as storagePath to allow deletion if needed
+          type: response.resource_type === "video" ? "VIDEO" : "IMAGE",
+          mimeType: file.type,
+          sizeBytes: response.bytes,
+        });
+      } else {
+        reject(new Error("Upload failed: " + xhr.responseText));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.send(formData);
   });
 }
 
@@ -116,7 +138,8 @@ export async function deletePost(postId: string): Promise<{ success: boolean; er
     if (data.authorId !== user.uid) throw new Error("Not authorized");
     
     if (data.media && data.media.length > 0) {
-      await Promise.all(data.media.map(m => deleteObject(ref(storage, m.storagePath)).catch(() => {})));
+      // TODO: Implement Cloudinary server action deletion using public_id if desired
+      // For now, media remains in Cloudinary when post is deleted
     }
     
     await deleteDoc(postRef);
